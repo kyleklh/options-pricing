@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "core",
+    "service",
+    "bindings",
+]
+resolver = "2"

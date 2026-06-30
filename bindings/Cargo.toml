@@ -1,0 +1,13 @@
+[package]
+name = "options-bindings"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "options_bindings"
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dependencies]
+options-core = { path = "../core" }
+pyo3 = { version = "0.22", features = ["extension-module"] }

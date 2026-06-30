@@ -1,0 +1,12 @@
+[package]
+name = "options-service"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "options-service"
+path = "src/main.rs"
+
+[dependencies]
+options-core = { path = "../core" }
+tokio = { version = "1", features = ["full"] }

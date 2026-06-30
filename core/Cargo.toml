@@ -1,0 +1,18 @@
+[package]
+name = "options-core"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "options_core"
+path = "src/lib.rs"
+
+[dependencies]
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+approx = "0.5"
+
+[[bench]]
+name = "pricing"
+harness = false
