@@ -4,10 +4,10 @@
 
 All benchmarks run on:
 
-- **CPU**: TODO (e.g. AMD Ryzen 9 5900X — fill in `lscpu` / Task Manager → CPU)
-- **RAM**: TODO
+- **CPU**: Intel Core i5-13600K
+- **RAM**: 32 GB
 - **OS**: Windows 11 Home 10.0.26200
-- **Rust toolchain**: TODO (run `rustc --version`)
+- **Rust toolchain**: rustc 1.96.0 (ac68faa20 2026-05-25)
 - **No background load** during measurement runs
 
 ## Methodology
