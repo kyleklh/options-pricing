@@ -1,5 +1,4 @@
 import json, itertools, sys, os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'python_reference'))
 sys.path.insert(0, os.path.dirname(__file__))
 from bs import bs_price, bs_delta, bs_gamma, bs_vega, bs_theta, bs_rho
 
@@ -12,12 +11,12 @@ rows = []
 for S, T, sigma, flag in itertools.product(spots, expiries, vols, ['call', 'put']):
     rows.append({
         "S": S, "K": K, "T": T, "r": r, "sigma": sigma, "flag": flag,
-        "price": round(bs_price(S, K, T, r, sigma, flag), 10),
-        "delta": round(bs_delta(S, K, T, r, sigma, flag), 10),
-        "gamma": round(bs_gamma(S, K, T, r, sigma), 10),
-        "vega":  round(bs_vega(S, K, T, r, sigma), 10),
-        "theta": round(bs_theta(S, K, T, r, sigma, flag), 10),
-        "rho":   round(bs_rho(S, K, T, r, sigma, flag), 10),
+        "price": round(float(bs_price(S, K, T, r, sigma, flag)), 10),
+        "delta": round(float(bs_delta(S, K, T, r, sigma, flag)), 10),
+        "gamma": round(float(bs_gamma(S, K, T, r, sigma)), 10),
+        "vega":  round(float(bs_vega(S, K, T, r, sigma)), 10),
+        "theta": round(float(bs_theta(S, K, T, r, sigma, flag)), 10),
+        "rho":   round(float(bs_rho(S, K, T, r, sigma, flag)), 10),
     })
 
 out = os.path.join(os.path.dirname(__file__), 'fixtures', 'grid.json')
