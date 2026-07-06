@@ -118,8 +118,63 @@ That matters because the `7.45e-8` error in A&S is invisible in a price but not 
 All four pass under `pytest test_cdf_accuracy.py`.
 
 ## 3. Implied volatility solver failure for deep OTM options
+**Status:** Fixed. **Severity:** High. Implied vol is the primary output of the engine (options are quoted in vol, not price), and the naive solver returns a confidently wrong number with no error on a whole region of the input domain.
 
-TODO
+### The bug
+
+Implied vol inverts Black-Scholes: given a market price, find the `sigma` that reproduces it. There is no closed form, so it is solved numerically. The natural first choice is Newton-Raphson on `f(sigma) = bs_price(sigma) - price`, whose derivative is vega:
+
+```
+sigma <- sigma - (bs_price(sigma) - price) / vega(sigma)
+```
+
+Vega is `S * pdf(d1) * sqrt(T)`. It is largest at the money and decays toward zero as the option moves away from the money or toward expiry. Newton divides by it, so as vega collapses the step size explodes. `implied_vol_newton` in `python_reference/iv.py` is this naive version, kept so the failure stays reproducible.
+
+### Reproducing it
+
+Price a call at a known `sigma = 0.20`, then feed the price back and try to recover it. As the option moves deep out of the money the round trip breaks:
+
+| case | K | T | price | vega | naive result | safeguarded result |
+|---|---|---|---|---|---|---|
+| ATM         | 100 | 1.0  | 1.045e+01 | 3.75e+01 | 0.200000 | 0.200000 |
+| OTM         | 150 | 0.5  | 1.868e-02 | 9.13e-01 | IVError  | 0.200000 |
+| deep OTM    | 300 | 0.5  | 4.862e-14 | 1.47e-11 | 0.000100 | 0.200000 |
+| very deep   | 500 | 0.1  | 1.561e-142| 5.05e-139| 0.000100 | 0.200000 |
+| near expiry | 120 | 0.01 | 1.154e-20 | 4.94e-18 | 0.000100 | 0.200000 |
+
+The true answer is `0.20` in every row. The naive solver gets it right only at the money. Deep OTM it returns `0.0001`, which is the seed clamp, not a real root. The `0.0001` is the dangerous case: no exception, just a wrong number that looks like a success.
+
+### Why it fails
+
+There are two separate defects, both visible in the table.
+
+**1. Vega in the denominator collapses.** Watch the vega column fall from `3.75e+01` to `4.94e-18`. Newton's step is `(price error) / vega`, so a vega near `1e-18` turns any residual into a gigantic step that overshoots to a nonsense sigma, often negative or NaN. The `RuntimeWarning: divide by zero` that `implied_vol_newton` emits on these inputs is this defect firing.
+
+**2. The absolute price tolerance is the wrong yardstick.** The naive loop stops when `abs(bs_price(sigma) - price) < 1e-8`. When the true price is `4.86e-14`, there is a wide interval of sigma values whose price is below `1e-8`, so the solver declares convergence at the first sigma it lands in that interval rather than at the true root. It reports whatever it happened to reach, which is why the answer is `0.0001` (the clamped seed's price is already under `1e-8`, so it "converges" on iteration zero). The price simply is not resolvable to `1e-8` in this region: the price-vs-vol curve is nearly flat, so a tiny price change maps to a large vol change, and the vol is genuinely hard to recover.
+
+### The fix
+
+`implied_vol` in `iv.py` replaces the raw Newton iteration with four changes:
+
+1. **Reject unrecoverable prices up front.** A finite implied vol exists only if the price sits strictly inside the no-arbitrage bounds (`_no_arb_bounds`). Prices at or below discounted intrinsic, including the ones that underflow to `0.0`, are rejected with a clear error instead of being solved for.
+2. **Seed with Brenner-Subrahmanyam.** Start from `sqrt(2*pi/T) * price/S`, clamped to `[1e-4, 5.0]`, rather than a blind constant. This lands near the root for near-ATM options.
+3. **Bracket the root.** Because price is monotone increasing in sigma, `[lo, hi]` with `bs_price(lo) <= price <= bs_price(hi)` traps the solution. Bisection on that bracket cannot diverge or go negative.
+4. **Safeguarded Newton with a bracket-width convergence test.** Each step tightens the bracket from the sign of the residual, then attempts a Newton step, but falls back to a bisection step whenever vega is below a floor (`1e-8`) or the Newton step would leave the bracket. Convergence is tested on bracket width (`hi - lo < tol`), not on price, so the flat deep-OTM region can no longer trigger false convergence.
+
+In the healthy ATM region Newton stays inside the bracket, so the fast quadratic convergence is preserved. Bisection is only paid for in the wings.
+
+### Proof
+
+`test_iv.py`:
+
+- `test_round_trip_recovers_sigma` inverts a grid of calls and puts across strikes, expiries, and vols, asserting recovery to `1e-6`. Cases whose vol-dependent price has underflowed are skipped as out of contract rather than asserted on.
+- `test_deep_otm_case_is_fixed` pins the exact `K=300, T=0.5` input the naive solver gets wrong.
+- `test_naive_solver_is_wrong_on_deep_otm` asserts `implied_vol_newton` is off by more than `0.01` (or raises) on that same input, so the failure claim above stays honest.
+- Three guard tests confirm below-intrinsic, above-`S`, and unknown-flag inputs all raise.
+
+### Why not just this: Jäckel's "Let's Be Rational"
+
+The safeguarded solver here is robust but iterative, and its iteration count varies with the input. Production pricers use Peter Jäckel's "Let's Be Rational" (2015) instead. It reformulates the problem in normalized variables (log-moneyness and total volatility), uses a rational approximation of the inverse to get a starting point already near machine precision, and refines with a single third-order Householder step. It reaches full precision in about two iterations across the entire domain, with a near-constant iteration count. That last property is the reason it is the standard: a pricing engine with a p99 latency target needs the solver to cost the same on every input, with no deep-OTM case that suddenly takes fifty iterations.
 
 ## 4. Binomial tree oscillation (odd vs. even step counts)
 
